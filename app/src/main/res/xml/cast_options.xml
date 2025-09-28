@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<cast-media-options xmlns:android="http://schemas.android.com/apk/res/android">
+    <media-session>
+        <metadata />
+    </media-session>
+
+    <notification>
+        <targetActivityClassName>ec.net.csed.tv.MainActivity</targetActivityClassName>
+    </notification>
+</cast-media-options>

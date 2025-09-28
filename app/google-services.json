@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "513022028863",
+    "project_id": "pruebas-iptv-csed",
+    "storage_bucket": "pruebas-iptv-csed.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:513022028863:android:462ed7080c043576c75c8a",
+        "android_client_info": {
+          "package_name": "ec.net.csed.tv"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC9hKpvGOe0cE1qpNWzHmfVp7zwoz8--uc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
