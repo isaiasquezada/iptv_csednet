@@ -78,6 +78,8 @@
     import androidx.compose.material.icons.filled.Warning
 
     //class MainActivity : ComponentActivity() {
+
+
     class MainActivity : FragmentActivity() {
         override fun onCreate(savedInstanceState: Bundle?) {
             super.onCreate(savedInstanceState)
@@ -205,6 +207,51 @@
     }
 
     @Composable
+    private fun ServerSelection(
+        selectedServer: String,
+        onServerSelected: (String) -> Unit,
+        azulEmpresarial: Color
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(
+                text = "Escoge tu servidor:",
+                style = MaterialTheme.typography.bodyLarge,
+                color = Color.Gray,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterHorizontally)
+            ) {
+                val servers = listOf("MAXVEL", "CSED")
+                servers.forEach { serverName ->
+                    val isSelected = selectedServer == serverName
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(if (isSelected) azulEmpresarial else Color.Transparent)
+                            .border(
+                                width = 2.dp,
+                                color = if (isSelected) azulEmpresarial else Color.LightGray,
+                                shape = RoundedCornerShape(12.dp)
+                            )
+                            .clickable { onServerSelected(serverName) }
+                            .padding(vertical = 12.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = serverName,
+                            color = if (isSelected) Color.White else Color.Black,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    @Composable
     fun ErrorDialog(onDismiss: () -> Unit) {
         Dialog(onDismissRequest = onDismiss) {
             Card(
@@ -265,11 +312,17 @@
         pass: String,
         onPassChange: (String) -> Unit,
         onLoginClick: () -> Unit,
-        gradienteBoton: Brush
+        gradienteBoton: Brush,
+        selectedServer: String,
+        onServerSelected: (String) -> Unit,
+        azulEmpresarial: Color
     ) {
         val focusManager = LocalFocusManager.current
         val azulEmpresarial = Color(0xFF24669a)
         val azulEnFoco = Color(0xFF3C87C8)
+
+        ServerSelection(selectedServer, onServerSelected, azulEmpresarial)
+        Spacer(modifier = Modifier.height(24.dp))
 
         // CAMPO DE USUARIO
         OutlinedTextField(
@@ -339,6 +392,10 @@
         val rojoEmpresarial = Color(0xFFda3a2c)
         val azulEnFoco = Color(0xFF3C87C8)
 
+        // --- URLS DE LOS SERVIDORES ---
+        val urlMaxvel = "http://45.183.142.42:8850"
+        val urlCsed = "http://45.183.143.40:25461"
+
         // Creamos un gradiente diagonal
         val gradienteBoton = Brush.linearGradient(
             colors = listOf(azulEmpresarial, rojoEmpresarial),
@@ -350,20 +407,25 @@
         var pass by remember { mutableStateOf("") }
         var error by remember { mutableStateOf(false) }
         var isLoggedIn by remember { mutableStateOf(false) }
+        var selectedServer by remember { mutableStateOf("MAXVEL") }
 
         // Leer desde DataStore
         LaunchedEffect(Unit) {
             context.dataStore.data.firstOrNull()?.let { prefs ->
                 val storedUser = prefs[USERNAME_KEY]
                 val storedPass = prefs[PASSWORD_KEY]
+                val storedUrl = prefs[URL_KEY]
+
                 if (!storedUser.isNullOrEmpty() && !storedPass.isNullOrEmpty()) {
                     user = storedUser
                     pass = storedPass
+                    selectedServer = if (storedUrl == urlMaxvel) "MAXVEL" else "CSED"
                     isLoggedIn = true
 
                     // ✅ Guardar en sesión global
                     UserSession.username = user
                     UserSession.password = pass
+                    UserSession.baseUrl = selectedServer
                 }
             }
         }
@@ -375,12 +437,14 @@
 
         val performLogin : () -> Unit = {
             scope.launch {
-                val success = loginIPTV("http://45.183.142.42:8850", user, pass)
+                val baseUrl = if (selectedServer == "MAXVEL") urlMaxvel else urlCsed
+                val success = loginIPTV(baseUrl, user, pass)
                 if (success) {
                     // Guardar en DataStore
                     context.dataStore.edit { prefs ->
                         prefs[USERNAME_KEY] = user
                         prefs[PASSWORD_KEY] = pass
+                        prefs[URL_KEY] = baseUrl
                     }
 
                     // Guardar en el ViewModel
@@ -389,9 +453,10 @@
                     // ✅ Guardar en sesión global
                     UserSession.username = user
                     UserSession.password = pass
+                    UserSession.baseUrl = baseUrl
 
                     channelViewModel.cargarDatos(
-                        "http://45.183.142.42:8850",
+                        baseUrl,
                         user,
                         pass
                     )
@@ -475,7 +540,14 @@
                         Column(
                             modifier = Modifier.weight(1f) // El formulario ocupa la otra parte
                         ) {
-                            LoginForm(user, { user = it }, pass, { pass = it }, onLoginClick = performLogin, gradienteBoton)
+                            LoginForm(
+                                user = user, onUserChange = { user = it },
+                                pass = pass, onPassChange = { pass = it },
+                                onLoginClick = performLogin, gradienteBoton = gradienteBoton,
+                                selectedServer = selectedServer,
+                                onServerSelected = { selectedServer = it },
+                                azulEmpresarial = azulEmpresarial
+                            )
                         }
                     }
                 } else {
@@ -491,8 +563,14 @@
                                 .height(240.dp)
                                 .padding(bottom = 24.dp)
                         )
-                        LoginForm(user, { user = it }, pass, { pass = it }, onLoginClick = performLogin, gradienteBoton)
-                    }
+                        LoginForm(
+                            user = user, onUserChange = { user = it },
+                            pass = pass, onPassChange = { pass = it },
+                            onLoginClick = performLogin, gradienteBoton = gradienteBoton,
+                            selectedServer = selectedServer,
+                            onServerSelected = { selectedServer = it },
+                            azulEmpresarial = azulEmpresarial
+                        )                    }
                 }
 
                 if (error) {
