@@ -177,7 +177,6 @@
 
                         setVideoURI(Uri.parse("android.resource://${context.packageName}/raw/intro_csedtv_white"))
 
-                        // ✨ LA MAGIA ESTÁ AQUÍ ✨
                         // Este listener nos avisa cuando el video REALMENTE empieza a mostrarse
                         setOnInfoListener { _, what, _ ->
                             if (what == MediaPlayer.MEDIA_INFO_VIDEO_RENDERING_START) {
@@ -427,6 +426,8 @@
              */
 
             if (isLoggedIn) {
+                navController.navigate(AppScreens.Channels.name)
+                /*
                 Text("Usuario: $user (conectado)", color = Color.Black)
                 Spacer(modifier = Modifier.height(16.dp))
                 Button(onClick = {
@@ -453,6 +454,7 @@
                 ) {
                     Text("Ingresar")
                 }
+                */
             } else {
 
                 if (isCompactHeight) {
@@ -612,246 +614,6 @@
                     }
                 }
                 */
-            }
-        }
-    }
-
-
-    @Composable
-    fun ChannelScreen_old(navController: NavHostController) {
-        val coroutineScope = rememberCoroutineScope()
-        var categorias by remember { mutableStateOf(listOf<LiveCategory>()) }
-        var canales by remember { mutableStateOf(listOf<LiveChannel>()) }
-        var categoriaSeleccionada by rememberSaveable { mutableStateOf<String?>(null) }
-        var inputBuffer by remember { mutableStateOf("") }
-        var inputJob by remember { mutableStateOf<Job?>(null) }
-
-        val configuration = LocalConfiguration.current
-        val isPortrait = configuration.orientation == Configuration.ORIENTATION_PORTRAIT
-
-        val url = "http://45.183.142.42:8850"
-        val usuario = "fzambonino"
-        val password = "csednet.2024"
-
-        LaunchedEffect(Unit) {
-            categorias = getLiveCategories(url, usuario, password)
-            canales = getLiveChannels(url, usuario, password)
-            categoriaSeleccionada = categorias.firstOrNull()?.category_id
-        }
-
-        val canalesFiltrados = canales.filter { it.category_id == categoriaSeleccionada }
-
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .onKeyEvent { keyEvent ->
-                    if (keyEvent.type == KeyEventType.KeyDown) {
-                        val keyChar = keyEvent.nativeKeyEvent?.displayLabel
-                        if (keyChar in '0'..'9') {
-                            inputBuffer += keyChar
-
-                            inputJob?.cancel()
-                            inputJob = coroutineScope.launch {
-                                delay(3000)
-                                val id = inputBuffer.toIntOrNull()
-                                inputBuffer = ""
-                                if (id != null) {
-                                    val canalEncontrado = canales.firstOrNull { it.stream_id == id }
-                                    if (canalEncontrado != null) {
-                                        navController.navigate("player/${canalEncontrado.stream_id}")
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    true
-                }
-        ) {
-            Row(Modifier.fillMaxSize()) {
-
-                // Panel izquierdo (logo + categorías)
-                Column(
-                    modifier = Modifier
-                        .width(250.dp)
-                        .fillMaxHeight()
-                        .padding(8.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    // Logo
-                    Image(
-                        painter = painterResource(id = R.raw.logo_iptv),
-                        contentDescription = "Logo IPTV",
-                        modifier = Modifier
-                            .height(80.dp)
-                            .padding(8.dp)
-                    )
-
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    // Categorías como botones
-                    LazyColumn {
-                        items(categorias) { categoria ->
-                            val seleccionada = categoria.category_id == categoriaSeleccionada
-                            Button(
-                                onClick = { categoriaSeleccionada = categoria.category_id },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 4.dp),
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = if (seleccionada) MaterialTheme.colorScheme.primary else Color.DarkGray
-                                )
-                            ) {
-                                Text(
-                                    text = categoria.category_name,
-                                    textAlign = TextAlign.Center,
-                                    color = Color.White,
-                                    modifier = Modifier.fillMaxWidth()
-                                )
-                            }
-                        }
-                    }
-                }
-
-                // Panel derecho: canales organizados en cuadros celestes
-                LazyVerticalGrid(
-                    columns = GridCells.Fixed(3),
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(8.dp),
-                    contentPadding = PaddingValues(8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    itemsIndexed(canalesFiltrados) { index: Int, canal: LiveChannel ->
-                        val interactionSource = remember { MutableInteractionSource() }
-
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(Color(0xFFBBDEFB))
-                                .border(2.dp, Color.LightGray, RoundedCornerShape(12.dp))
-                                .focusable(interactionSource = interactionSource)
-                                .clickable {
-                                    navController.navigate("player/${canal.stream_id}")
-                                }
-                                .padding(8.dp)
-                        ) {
-                            Column(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalAlignment = Alignment.CenterHorizontally
-                            ) {
-                                Box(modifier = Modifier.fillMaxWidth()) {
-                                    Text(
-                                        text = "#${canal.stream_id}",
-                                        color = Color.DarkGray,
-                                        modifier = Modifier
-                                            .align(Alignment.TopEnd)
-                                            .padding(4.dp),
-                                        style = MaterialTheme.typography.labelSmall
-                                    )
-                                }
-
-                                AsyncImage(
-                                    model = canal.stream_icon,
-                                    contentDescription = canal.name,
-                                    modifier = Modifier
-                                        .height(100.dp)
-                                        .fillMaxWidth()
-                                        .clip(RoundedCornerShape(8.dp))
-                                )
-
-                                Spacer(modifier = Modifier.height(6.dp))
-
-                                Text(
-                                    text = canal.name,
-                                    textAlign = TextAlign.Center,
-                                    color = Color.Black,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    modifier = Modifier.fillMaxWidth()
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-            // 🔢 Mostrar número digitado
-            if (inputBuffer.isNotEmpty()) {
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.Center)
-                        .background(Color(0xAA333333), shape = RoundedCornerShape(12.dp))
-                        .padding(horizontal = 32.dp, vertical = 24.dp)
-                ) {
-                    Text(
-                        text = inputBuffer,
-                        color = Color.White,
-                        style = MaterialTheme.typography.headlineLarge
-                    )
-                }
-            }
-        }
-
-    }
-
-
-    @Composable
-    fun ChannelCard(canal: LiveChannel, navController: NavHostController, focusRequester: FocusRequester? = null, onAttached: (() -> Unit)? = null) {
-        val interactionSource = remember { MutableInteractionSource() }
-        val isFocused by interactionSource.collectIsFocusedAsState()
-
-        Box(
-            modifier = Modifier
-                .clip(RoundedCornerShape(12.dp))
-                .background(if (isFocused) Color(0xFF42A5F5) else Color(0xFFBBDEFB))
-                .border(2.dp, Color.LightGray, RoundedCornerShape(12.dp))
-                // .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
-                .then(
-                    if (focusRequester != null) {
-                        Modifier
-                            .focusRequester(focusRequester)
-                            .onGloballyPositioned { onAttached?.invoke() }
-                    } else Modifier
-                )
-                .onFocusChanged { }
-                .focusable(interactionSource = interactionSource)
-                .clickable {
-                    navController.navigate("player/${canal.stream_id}")
-                }
-                .padding(8.dp)
-        ) {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Box(modifier = Modifier.fillMaxWidth()) {
-                    Text(
-                        text = "#${canal.stream_id}",
-                        color = Color.DarkGray,
-                        modifier = Modifier
-                            .align(Alignment.TopEnd)
-                            .padding(4.dp),
-                        style = MaterialTheme.typography.labelSmall
-                    )
-                }
-
-                AsyncImage(
-                    model = canal.stream_icon,
-                    contentDescription = canal.name,
-                    modifier = Modifier
-                        .height(100.dp)
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(8.dp))
-                )
-
-                Spacer(modifier = Modifier.height(6.dp))
-
-                Text(
-                    text = canal.name,
-                    textAlign = TextAlign.Center,
-                    color = Color.Black,
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.fillMaxWidth()
-                )
             }
         }
     }
