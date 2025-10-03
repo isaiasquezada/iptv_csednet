@@ -253,7 +253,7 @@ fun TopHeader_ant(user: String) {
     }
 }
 
-// TU ChannelCard original, adaptado para el nuevo diseño oscuro y premium.
+// ChannelCard original, adaptado para el nuevo diseño oscuro y premium.
 @Composable
 fun StyledChannelCard(
     canal: LiveChannel,
@@ -392,6 +392,19 @@ fun ChannelScreen(
         }
         if (categoriaSeleccionada == null) {
             channelViewModel.seleccionarCategoria("all")
+        }
+    }
+
+    LaunchedEffect(categoriasOriginales, canales) {
+        if (categoriasOriginales.isNotEmpty() && canales.isEmpty()) {
+            delay(3000)
+            if (canales.isEmpty()) {
+                channelViewModel.cargarDatos(
+                    UserSession.baseUrl ?: "",
+                    UserSession.username ?: "",
+                    UserSession.password ?: ""
+                )
+            }
         }
     }
 

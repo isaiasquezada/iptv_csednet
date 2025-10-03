@@ -33,13 +33,39 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.activity.ComponentActivity
+import androidx.compose.ui.draw.clip
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import java.net.HttpURLConnection
+import java.net.URL
 
 
+// Para evaluar si los canales están en SD o HD
+enum class StreamQuality { HD, SD }
+data class StreamInfo(val url: String, val quality: StreamQuality, val resolution: String)
 
+// Composable para mostrar la calidad actual ---
+@Composable
+fun QualityIndicator(quality: StreamQuality) {
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(8.dp))
+            .background(Color.White.copy(alpha = 0.5f))
+            .padding(horizontal = 8.dp, vertical = 4.dp)
+    ) {
+        Text(
+            text = quality.name,
+            color = Color.White,
+            fontWeight = FontWeight.Bold,
+            fontSize = 14.sp
+        )
+    }
+}
 
 @Composable
 fun PlayerScreen(
@@ -52,8 +78,12 @@ fun PlayerScreen(
     val context = LocalContext.current
     val hasCodecLine = remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
-    //val castContext = remember { CastContext.getSharedInstance(context) }
-    //val sessionManager = remember { castContext.sessionManager }
+
+    //medir la capacidad adaptativa
+    var availableStreams by remember { mutableStateOf<List<StreamInfo>>(emptyList()) }
+    var currentQuality by remember { mutableStateOf(StreamQuality.HD) }
+    var bufferingEventCount by remember { mutableStateOf(0) }
+
     var castContext: CastContext? by remember { mutableStateOf(null) }
     var sessionManager: SessionManager? by remember { mutableStateOf(null) }
 
@@ -69,7 +99,7 @@ fun PlayerScreen(
 
 
 
-    // 🔒 Mantener pantalla encendida
+    //Mantener pantalla encendida
     LaunchedEffect(Unit) {
         val activity = context as? android.app.Activity
         activity?.window?.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -80,6 +110,81 @@ fun PlayerScreen(
 
     val isCastCompatible = remember { mutableStateOf(false) } // <- para mostrar el ícono en blanco o gris
 
+    val libVLC = remember {
+        LibVLC(context, mutableListOf("--no-drop-late-frames", "--no-skip-frames"))
+    }
+
+    val mediaPlayer = remember(libVLC, url) {
+        MediaPlayer(libVLC).apply {
+            val media = Media(libVLC, Uri.parse(url)).apply {
+                setHWDecoderEnabled(true, false)
+                addOption(":network-caching=150")
+            }
+            this.media = media
+            setVolume(100)
+            play()
+
+            // 🧠 LOG de diagnóstico del canal
+            println("🧪 Diagnóstico de canal $streamId:")
+            println("🔗 URL: $url")
+            println("🎵 ¿AC3? ${url.contains("ac3", ignoreCase = true)}")
+            println("🎞️ ¿.m3u8? ${url.endsWith(".m3u8")}")
+            println("📡 ¿Cast compatible? ${url.endsWith(".m3u8") && !url.contains("ac3", ignoreCase = true)}")
+        }
+    }
+
+    // Funcion que aborda streamId si este cambia la funcion ejecuta estos pasos
+    LaunchedEffect(streamId) {
+        val masterUrl = "$baseUrl/live/$username/$password/$streamId.m3u8"
+
+        // 1. Analizamos el .m3u8 para encontrar las calidades
+        withContext(Dispatchers.IO) {
+            try {
+                val lines = URL(masterUrl).readText().lines()
+                val streams = mutableListOf<StreamInfo>()
+                lines.forEachIndexed { index, line ->
+                    if (line.startsWith("#EXT-X-STREAM-INF")) {
+                        val resolution = line.substringAfter("RESOLUTION=").substringBefore(",")
+                        val streamUrl = lines.getOrNull(index + 1)
+                        if (streamUrl != null && !streamUrl.startsWith("#")) {
+                            // Asumimos que la primera es HD y las demás SD (puedes mejorar esta lógica)
+                            val quality = if (streams.isEmpty()) StreamQuality.HD else StreamQuality.SD
+                            // Asegurarse de que la URL sea completa
+                            val fullStreamUrl = if (streamUrl.startsWith("http")) streamUrl else {
+                                val base = masterUrl.substringBeforeLast('/')
+                                "$base/$streamUrl"
+                            }
+                            streams.add(StreamInfo(fullStreamUrl, quality, resolution))
+                        }
+                    }
+                }
+                // Si solo hay una URL o no se encontraron streams, usamos la URL maestra
+                if (streams.isEmpty()) {
+                    streams.add(StreamInfo(masterUrl, StreamQuality.HD, "Original"))
+                }
+                availableStreams = streams.sortedByDescending { it.quality.ordinal }
+            } catch (e: Exception) {
+                println("❌ Error al analizar el M3U8 maestro: ${e.message}")
+                availableStreams = listOf(StreamInfo(masterUrl, StreamQuality.HD, "Original"))
+            }
+        }
+
+        // 2. Cargamos el stream de la calidad preferida (HD por defecto)
+        val streamToPlay = availableStreams.firstOrNull { it.quality == currentQuality }
+            ?: availableStreams.firstOrNull()
+
+        if (streamToPlay != null) {
+            val media = Media(libVLC, Uri.parse(streamToPlay.url)).apply {
+                setHWDecoderEnabled(true, false)
+                addOption(":network-caching=1500")
+            }
+            mediaPlayer.media = media
+            media.release()
+            mediaPlayer.play()
+        }
+    }
+
+    /*
     LaunchedEffect(url) {
         try {
             withContext(Dispatchers.IO) {
@@ -124,30 +229,9 @@ fun PlayerScreen(
             println("❌ Error al analizar el .m3u8 del canal $streamId: ${e.message}")
         }
     }
+   */
 
 
-    val libVLC = remember {
-        LibVLC(context, mutableListOf("--no-drop-late-frames", "--no-skip-frames"))
-    }
-
-    val mediaPlayer = remember(libVLC, url) {
-        MediaPlayer(libVLC).apply {
-            val media = Media(libVLC, Uri.parse(url)).apply {
-                setHWDecoderEnabled(true, false)
-                addOption(":network-caching=150")
-            }
-            this.media = media
-            setVolume(100)
-            play()
-
-            // 🧠 LOG de diagnóstico del canal
-            println("🧪 Diagnóstico de canal $streamId:")
-            println("🔗 URL: $url")
-            println("🎵 ¿AC3? ${url.contains("ac3", ignoreCase = true)}")
-            println("🎞️ ¿.m3u8? ${url.endsWith(".m3u8")}")
-            println("📡 ¿Cast compatible? ${url.endsWith(".m3u8") && !url.contains("ac3", ignoreCase = true)}")
-        }
-    }
 
     val isMuted = remember { mutableStateOf(false) }
     val audioTracks = remember { mutableStateListOf<MediaPlayer.TrackDescription>() }
@@ -236,45 +320,6 @@ fun PlayerScreen(
 
         }, CastSession::class.java)
 
-        /*sessionManager.addSessionManagerListener(object : SessionManagerListener<Session> {
-            override fun onSessionStarted(session: CastSession, sessionId: String?) {
-                if (session.isConnected) {
-                    mediaPlayer.stop()
-
-                    val remoteMediaClient = session.remoteMediaClient
-                    val mediaMetadata = MediaMetadata(MediaMetadata.MEDIA_TYPE_MOVIE).apply {
-                        putString(MediaMetadata.KEY_TITLE, "Canal $streamId")
-                    }
-
-                    val mediaInfo = MediaInfo.Builder(url)
-                        .setStreamType(MediaInfo.STREAM_TYPE_LIVE)
-                        .setContentType("application/x-mpegURL")
-                        .setMetadata(mediaMetadata)
-                        .build()
-
-                    val mediaLoadRequestData = MediaLoadRequestData.Builder()
-                        .setMediaInfo(mediaInfo)
-                        .build()
-
-                    remoteMediaClient?.load(mediaLoadRequestData)
-                }
-            }
-
-
-
-            override fun onSessionEnded(session: Session?, error: Int) {
-                // Podrías volver a reproducir local si quieres
-            }
-
-            override fun onSessionResumeFailed(session: Session?, error: Int) {}
-            override fun onSessionResumed(session: Session?, wasSuspended: Boolean) {}
-            override fun onSessionStarting(session: Session?) {}
-            override fun onSessionResuming(session: Session?, sessionId: String?) {}
-            override fun onSessionEnding(session: Session?) {}
-            override fun onSessionStartFailed(session: Session?, error: Int) {}
-            override fun onSessionSuspended(session: Session?, reason: Int) {}
-        }, Session::class.java)
-    */
     }
 
     // 🧹 Limpieza
@@ -286,6 +331,7 @@ fun PlayerScreen(
         }
     }
 
+    /*
     // 🎧 Cargar pistas de audio
     LaunchedEffect(mediaPlayer) {
         kotlinx.coroutines.delay(1000)
@@ -296,37 +342,30 @@ fun PlayerScreen(
             println("⚠️ Error al cargar pistas de audio: ${e.message}")
         }
     }
+    */
 
-
-
-    // Control de pausa/reanudar según visibilidad
-    /*val lifecycleOwner = LocalLifecycleOwner.current
-    DisposableEffect(lifecycleOwner) {
-        val observer = LifecycleEventObserver { _, event ->
-            when (event) {
-                Lifecycle.Event.ON_PAUSE -> {
-                    mediaPlayer.stop() // detén completamente
-                }
-                Lifecycle.Event.ON_RESUME -> {
-                    // recarga el stream al volver a primer plano
-                    val media = Media(libVLC, Uri.parse(url)).apply {
-                        setHWDecoderEnabled(true, false)
-                        addOption(":network-caching=150")
+    LaunchedEffect(mediaPlayer) {
+        mediaPlayer.setEventListener { event ->
+            if (event.type == MediaPlayer.Event.Buffering && event.buffering < 100f) {
+                bufferingEventCount++
+                // Si hay muchos eventos de buffering en poco tiempo, bajamos la calidad
+                if (bufferingEventCount > 5 && currentQuality == StreamQuality.HD) {
+                    val sdStream = availableStreams.firstOrNull { it.quality == StreamQuality.SD }
+                    if (sdStream != null) {
+                        println("📉 Conexión lenta detectada. Cambiando a calidad SD.")
+                        currentQuality = StreamQuality.SD
+                        val media = Media(libVLC, Uri.parse(sdStream.url))
+                        mediaPlayer.media = media
+                        media.release()
+                        mediaPlayer.play()
                     }
-                    mediaPlayer.media = media
-                    mediaPlayer.play()
                 }
-                else -> Unit
+            } else if (event.type == MediaPlayer.Event.Playing) {
+                bufferingEventCount = 0 // Reseteamos el contador al reproducir
             }
         }
-
-        lifecycleOwner.lifecycle.addObserver(observer)
-
-        onDispose {
-            lifecycleOwner.lifecycle.removeObserver(observer)
-        }
     }
-*/
+
     LaunchedEffect(Unit) {
         val contextAsActivity = context as? ComponentActivity
         contextAsActivity?.lifecycle?.addObserver(object : LifecycleEventObserver {
@@ -372,14 +411,14 @@ fun PlayerScreen(
             Text("⬅️", color = Color.White, style = MaterialTheme.typography.titleLarge)
         }
 
-        // 📡 Botón CAST
-        /*
-        val isCastCompatible = remember(url) {
-            // Muy básico: solo permitimos casting a URLs que terminen en .m3u8
-            // y que no contengan palabras clave de incompatibilidad (puedes ajustar)
-            // url.endsWith(".m3u8") && !url.contains("ac3", ignoreCase = true)
-            url.endsWith(".m3u8") && !url.contains("ac3", ignoreCase = true) && hasCodecsInfo.value
-        }*/
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(10.dp, 25.dp)
+        ) {
+            QualityIndicator(quality = currentQuality)
+        }
+
         val isCastCompatible = remember(url, hasCodecLine.value) {
             derivedStateOf {
                 url.endsWith(".m3u8") &&
@@ -387,7 +426,6 @@ fun PlayerScreen(
                         hasCodecLine.value
             }
         }
-
 
         if (castContext != null) {
             val castCompatibleNow = isCastCompatible
@@ -410,145 +448,5 @@ fun PlayerScreen(
                 )
             }
         }
-
-
-        /*
-        if (castContext != null && isCastCompatible) {
-            Box(
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(16.dp)
-            ) {
-                AndroidView(
-                    factory = {
-                        MediaRouteButton(it).apply {
-                            CastButtonFactory.setUpMediaRouteButton(it, this)
-                        }
-                    },
-                    modifier = Modifier.size(32.dp)
-                )
-            }
-        }*/
-
-        /* Muestra el boton de CAST, pero lo reemplazo con el de arriba para hver si funka
-        Box(
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(16.dp)
-        ) {
-            AndroidView(
-                factory = {
-                    MediaRouteButton(it).apply {
-                        CastButtonFactory.setUpMediaRouteButton(it, this)
-                    }
-                },
-                modifier = Modifier.size(32.dp)
-            )
-        }*/
     }
 }
-
-/*
-@Composable
-fun PlayerScreen(
-    streamId: Int,
-    username: String,
-    password: String,
-    baseUrl: String,
-    navController: NavHostController
-) {
-    val context = LocalContext.current
-    LaunchedEffect(Unit) {
-        val activity = context as? android.app.Activity
-        activity?.window?.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-    }
-
-    val url = "$baseUrl/live/$username/$password/$streamId.m3u8"
-
-    val libVLC = remember {
-        LibVLC(context, mutableListOf("--no-drop-late-frames", "--no-skip-frames"))
-    }
-
-    val mediaPlayer = remember(libVLC, url) {
-        MediaPlayer(libVLC).apply {
-            val media = Media(libVLC, Uri.parse(url)).apply {
-                setHWDecoderEnabled(true, false)
-                addOption(":network-caching=150")
-            }
-            this.media = media
-            setVolume(100)
-            play()
-        }
-    }
-
-    val isMuted = remember { mutableStateOf(false) }
-    val audioTracks = remember { mutableStateListOf<MediaPlayer.TrackDescription>() }
-    val selectedTrackId = remember { mutableStateOf<Int?>(null) }
-
-    // 🧹 Limpieza al salir
-    DisposableEffect(Unit) {
-        onDispose {
-            mediaPlayer.stop()
-            mediaPlayer.release()
-            libVLC.release()
-        }
-    }
-
-    // Obtener pistas de audio al cargar
-    LaunchedEffect(mediaPlayer) {
-        kotlinx.coroutines.delay(1000) // Espera que cargue
-        try {
-            mediaPlayer.audioTracks?.forEach { track ->
-                audioTracks.add(track)
-            }
-            selectedTrackId.value = mediaPlayer.audioTrack
-        } catch (e: Exception) {
-            println("⚠️ Error al cargar pistas de audio: ${e.message}")
-        }
-    }
-
-    // Vista principal
-    Box(modifier = Modifier.fillMaxSize()) {
-        AndroidView(
-            factory = {
-                VLCVideoLayout(it).also { layout ->
-                    mediaPlayer.attachViews(layout, null, false, false)
-                }
-            },
-            modifier = Modifier.fillMaxSize()
-        )
-
-        // Boton para regresar
-        Box(
-            modifier = Modifier
-                .align(Alignment.TopStart)
-                .padding(16.dp)
-                .background(Color(0x66000000), shape = RoundedCornerShape(50))
-                .clickable { navController.popBackStack() }
-                .padding(horizontal = 16.dp, vertical = 8.dp)
-        ) {
-            Text(
-                text = " ⬅️",
-                color = Color.White,
-                style = MaterialTheme.typography.titleLarge
-            )
-        }
-
-        //Boton de CAST
-        Box(
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(16.dp)
-        ) {
-            AndroidView(
-                factory = { context ->
-                    MediaRouteButton(context).apply {
-                        CastButtonFactory.setUpMediaRouteButton(context.applicationContext, this)
-                    }
-                },
-                modifier = Modifier.size(32.dp)
-            )
-        }
-    }
-}
-*/
