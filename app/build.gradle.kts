@@ -102,7 +102,7 @@ dependencies {
 // Google Cast SDK (para botones, sesiones, media control, notificaciones, etc.)
     implementation("androidx.appcompat:appcompat:1.6.1") // Necesaria para Cast context
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.6.2")
-
+    implementation("androidx.compose.material:material-icons-extended-android:1.6.5")
 }
 
 apply(plugin = "com.google.gms.google-services")

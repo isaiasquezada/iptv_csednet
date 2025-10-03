@@ -130,7 +130,8 @@
                     streamId = streamId,
                     username = UserSession.username, //userViewModel.username.collectAsState().value,
                     password = UserSession.password, //userViewModel.password.collectAsState().value,
-                    baseUrl = "http://45.183.142.42:8850",
+
+                    baseUrl = UserSession.baseUrl,
                     navController = navController
                 )
             }
@@ -143,7 +144,6 @@
         // 1. Creamos el estado para controlar la visibilidad del video.
         var isVideoVisible by remember { mutableStateOf(false) }
 
-        // Tu lógica de navegación y audio se mantiene igual.
         LaunchedEffect(Unit) {
             val activarAudioSplash = false // ← cámbialo a true si quieres que suene
             val mediaPlayer = if (activarAudioSplash) {
@@ -420,13 +420,38 @@
                     user = storedUser
                     pass = storedPass
                     selectedServer = if (storedUrl == urlMaxvel) "MAXVEL" else "CSED"
-                    isLoggedIn = true
+
 
                     // ✅ Guardar en sesión global
                     UserSession.username = user
                     UserSession.password = pass
-                    UserSession.baseUrl = selectedServer
+                    if (storedUrl != null) {
+                        UserSession.baseUrl = storedUrl
+                    } else{
+                        UserSession.baseUrl = urlCsed
+                    }
+
+                    //Log.d("AutoLogin", "Precargando datos de canales...")
+                    channelViewModel.cargarDatos(UserSession.baseUrl , storedUser, storedPass)
+
+                    isLoggedIn = true
                 }
+            }
+        }
+
+        LaunchedEffect(isLoggedIn) {
+            if (isLoggedIn) {
+                //UserSession.username = user
+                //UserSession.password = pass
+                //UserSession.baseUrl = baseUrl
+
+                channelViewModel.cargarDatos(
+                    UserSession.baseUrl,
+                    UserSession.username,
+                    UserSession.password
+                )
+                delay(200) // Mantenemos un pequeño delay opcional
+                navController.navigate(AppScreens.Channels.name)
             }
         }
 
@@ -434,7 +459,6 @@
         val configuration = LocalConfiguration.current
         // Decidimos si la altura es "compacta" (típico de un celular horizontal)
         val isCompactHeight = configuration.screenHeightDp.dp < 480.dp
-
         val performLogin : () -> Unit = {
             scope.launch {
                 val baseUrl = if (selectedServer == "MAXVEL") urlMaxvel else urlCsed
@@ -479,47 +503,9 @@
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             val focusManager = LocalFocusManager.current
-            /*
-            Image(
-                painter = painterResource(id = R.raw.logo_csedtv),
-                contentDescription = "Logo IPTV",
-                modifier = Modifier
-                    .height(240.dp)
-                    .padding(bottom = 24.dp)
-            )
-
-             */
 
             if (isLoggedIn) {
-                navController.navigate(AppScreens.Channels.name)
-                /*
-                Text("Usuario: $user (conectado)", color = Color.Black)
-                Spacer(modifier = Modifier.height(16.dp))
-                Button(onClick = {
-                    isLoggedIn = false
-                    user = ""
-                    pass = ""
-                },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Color.Red,       // Fondo del botón
-                        contentColor = Color.Black         // Texto dentro del botón
-                    )
-                ) {
-                    Text("Cambiar usuario")
-                }
-
-                Spacer(modifier = Modifier.height(24.dp))
-                Button(onClick = {
-                    navController.navigate(AppScreens.Channels.name)
-                },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Color.Cyan,       // Fondo del botón
-                        contentColor = Color.Black         // Texto dentro del botón
-                    )
-                ) {
-                    Text("Ingresar")
-                }
-                */
+                //navController.navigate(AppScreens.Channels.name)
             } else {
 
                 if (isCompactHeight) {
@@ -576,122 +562,6 @@
                 if (error) {
                     ErrorDialog(onDismiss = { error = false })
                 }
-
-
-                /*
-                Column(
-                    modifier = Modifier.widthIn(max = 480.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    // CAMPO DE USUARIO
-                    OutlinedTextField(
-                        value = user,
-                        onValueChange = { user = it },
-                        label = {
-                            Text(
-                                text = "Usuario",
-                                modifier = Modifier.fillMaxWidth(),
-                                textAlign = TextAlign.Center
-                            )
-                        },
-                        textStyle = LocalTextStyle.current.copy(textAlign = TextAlign.Center),
-                        // 2. Configura las opciones del teclado.
-                        keyboardOptions = KeyboardOptions(
-                            // Esto cambia el botón 'Enter' por un botón 'Siguiente' (una flecha →).
-                            imeAction = ImeAction.Next
-                        ),
-                        // 3. Define la acción a ejecutar.
-                        keyboardActions = KeyboardActions(
-                            onNext = {
-                                // Mueve el foco al siguiente elemento focusable.
-                                focusManager.moveFocus(FocusDirection.Next)
-                            }
-                        ),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = azulEnFoco,
-                            unfocusedBorderColor = azulEmpresarial,
-                            cursorColor = azulEmpresarial
-                        ),
-                        modifier = Modifier.fillMaxWidth()
-                    )
-
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    OutlinedTextField(
-                        value = pass,
-                        onValueChange = { pass = it },
-                        label = {
-                            Text(
-                                text = "Contraseña",
-                                modifier = Modifier.fillMaxWidth(),
-                                textAlign = TextAlign.Center
-                            )
-                        },
-                        textStyle = LocalTextStyle.current.copy(
-                            textAlign = TextAlign.Center
-                        ),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = azulEnFoco,
-                            unfocusedBorderColor = azulEmpresarial,
-                            cursorColor = azulEmpresarial
-                        ),
-                        modifier = Modifier.fillMaxWidth()
-                    )
-
-
-                    Spacer(modifier = Modifier.height(24.dp))
-
-                    Button(
-                        onClick = {
-                            scope.launch {
-                                val success = loginIPTV("http://45.183.142.42:8850", user, pass)
-                                if (success) {
-                                    // Guardar en DataStore
-                                    context.dataStore.edit { prefs ->
-                                        prefs[USERNAME_KEY] = user
-                                        prefs[PASSWORD_KEY] = pass
-                                    }
-
-                                    // Guardar en el ViewModel
-                                    userViewModel.setCredentials(user, pass)
-
-                                    // ✅ Guardar en sesión global
-                                    UserSession.username = user
-                                    UserSession.password = pass
-
-                                    channelViewModel.cargarDatos(
-                                        "http://45.183.142.42:8850",
-                                        user,
-                                        pass
-                                    )
-                                    delay(1500) // dejar un tiempo para precarga
-                                    navController.navigate(AppScreens.Channels.name)
-                                } else {
-                                    error = true
-                                }
-                            }
-                        },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = Color.Transparent, // Hacemos el contenedor transparente
-                            contentColor = Color.White          // Color del texto
-                        ),
-                        contentPadding = PaddingValues(horizontal = 32.dp, vertical = 16.dp),
-                        modifier = Modifier
-                            .background(
-                                brush = gradienteBoton,
-                                shape = RoundedCornerShape(50)
-                            ) // Aplicamos el gradiente y la forma
-                            .clip(RoundedCornerShape(50))
-                    ) {
-                        Text("Iniciar Sesión", fontWeight = FontWeight.Bold)
-                    }
-
-                    if (error) {
-                        ErrorDialog(onDismiss = { error = false })
-                    }
-                }
-                */
             }
         }
     }
